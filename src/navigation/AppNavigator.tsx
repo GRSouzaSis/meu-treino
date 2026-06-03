@@ -6,6 +6,7 @@ import { Text } from 'react-native';
 import { RootStackParamList, TabParamList } from '../types';
 import CalendarScreen from '../screens/CalendarScreen';
 import WorkoutsScreen from '../screens/WorkoutsScreen';
+import StatsScreen from '../screens/StatsScreen';
 import WorkoutExecutionScreen from '../screens/WorkoutExecutionScreen';
 import WorkoutFormScreen from '../screens/WorkoutFormScreen';
 import ExerciseFormScreen from '../screens/ExerciseFormScreen';
@@ -36,6 +37,14 @@ function Tabs() {
         options={{
           title: 'Treinos',
           tabBarIcon: ({ color }) => <Text style={{ fontSize: 20, color }}>💪</Text>,
+        }}
+      />
+      <Tab.Screen
+        name="Stats"
+        component={StatsScreen}
+        options={{
+          title: 'Check-ins',
+          tabBarIcon: ({ color }) => <Text style={{ fontSize: 20, color }}>📊</Text>,
         }}
       />
     </Tab.Navigator>

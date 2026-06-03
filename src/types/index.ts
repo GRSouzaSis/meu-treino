@@ -39,4 +39,5 @@ export type RootStackParamList = {
 export type TabParamList = {
   Calendario: undefined;
   Treinos: undefined;
+  Stats: undefined;
 };

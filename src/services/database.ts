@@ -42,6 +42,55 @@ export function setupDatabase() {
   `);
 }
 
+export function seedWorkouts() {
+  const existing = db.getFirstSync<{ count: number }>('SELECT COUNT(*) as count FROM workouts');
+  if (existing && existing.count > 0) return;
+
+  const workouts: { name: string; exercises: { name: string; sets: number; reps: number; weight: number }[] }[] = [
+    {
+      name: 'A',
+      exercises: [
+        { name: 'Supino Reto', sets: 4, reps: 10, weight: 40 },
+        { name: 'Supino Inclinado', sets: 3, reps: 12, weight: 35 },
+        { name: 'Crucifixo', sets: 3, reps: 12, weight: 15 },
+        { name: 'Tríceps Pulley', sets: 3, reps: 12, weight: 25 },
+        { name: 'Tríceps Testa', sets: 3, reps: 12, weight: 20 },
+      ],
+    },
+    {
+      name: 'B',
+      exercises: [
+        { name: 'Puxada Frontal', sets: 4, reps: 10, weight: 50 },
+        { name: 'Remada Curvada', sets: 4, reps: 10, weight: 50 },
+        { name: 'Remada Unilateral', sets: 3, reps: 12, weight: 20 },
+        { name: 'Rosca Direta', sets: 3, reps: 12, weight: 25 },
+        { name: 'Rosca Martelo', sets: 3, reps: 12, weight: 12.5 },
+      ],
+    },
+    {
+      name: 'C',
+      exercises: [
+        { name: 'Agachamento', sets: 4, reps: 10, weight: 60 },
+        { name: 'Leg Press', sets: 4, reps: 12, weight: 100 },
+        { name: 'Extensora', sets: 3, reps: 15, weight: 40 },
+        { name: 'Flexora', sets: 3, reps: 15, weight: 35 },
+        { name: 'Desenvolvimento', sets: 3, reps: 10, weight: 30 },
+        { name: 'Elevação Lateral', sets: 3, reps: 15, weight: 10 },
+      ],
+    },
+  ];
+
+  workouts.forEach(({ name, exercises }) => {
+    const { lastInsertRowId } = db.runSync('INSERT INTO workouts (name) VALUES (?)', name);
+    exercises.forEach(e => {
+      db.runSync(
+        'INSERT INTO exercises (workout_id, name, sets, reps, weight) VALUES (?, ?, ?, ?, ?)',
+        lastInsertRowId, e.name, e.sets, e.reps, e.weight
+      );
+    });
+  });
+}
+
 // Workouts
 export function getWorkouts(): Workout[] {
   return db.getAllSync('SELECT * FROM workouts ORDER BY name');
@@ -111,4 +160,21 @@ export function insertSetLog(workoutLogId: number, exerciseId: number, exerciseN
 
 export function getSetLogs(workoutLogId: number): SetLog[] {
   return db.getAllSync('SELECT * FROM set_logs WHERE workout_log_id = ? ORDER BY exercise_id, set_number', workoutLogId);
+}
+
+// Stats
+export function getCheckInsByYear(): { year: string; count: number }[] {
+  return db.getAllSync(
+    `SELECT strftime('%Y', date) AS year, COUNT(*) AS count
+     FROM workout_logs GROUP BY year ORDER BY year DESC`
+  );
+}
+
+export function getCheckInsByMonth(year: string): { month: string; count: number }[] {
+  return db.getAllSync(
+    `SELECT strftime('%m', date) AS month, COUNT(*) AS count
+     FROM workout_logs WHERE strftime('%Y', date) = ?
+     GROUP BY month ORDER BY month ASC`,
+    year
+  );
 }
