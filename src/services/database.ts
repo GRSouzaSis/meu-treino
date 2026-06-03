@@ -26,6 +26,7 @@ export function setupDatabase() {
       workout_id INTEGER NOT NULL,
       workout_name TEXT NOT NULL,
       date TEXT NOT NULL,
+      duration_seconds INTEGER NOT NULL DEFAULT 0,
       FOREIGN KEY (workout_id) REFERENCES workouts(id)
     );
 
@@ -40,6 +41,10 @@ export function setupDatabase() {
       FOREIGN KEY (workout_log_id) REFERENCES workout_logs(id) ON DELETE CASCADE
     );
   `);
+  // migration for existing databases without duration_seconds
+  try {
+    db.execSync(`ALTER TABLE workout_logs ADD COLUMN duration_seconds INTEGER NOT NULL DEFAULT 0`);
+  } catch {}
 }
 
 export function seedWorkouts() {
@@ -142,10 +147,10 @@ export function deleteWorkoutLog(id: number) {
   db.runSync('DELETE FROM workout_logs WHERE id = ?', id);
 }
 
-export function insertWorkoutLog(workoutId: number, workoutName: string, date: string): number {
+export function insertWorkoutLog(workoutId: number, workoutName: string, date: string, durationSeconds: number): number {
   const result = db.runSync(
-    'INSERT INTO workout_logs (workout_id, workout_name, date) VALUES (?, ?, ?)',
-    workoutId, workoutName, date
+    'INSERT INTO workout_logs (workout_id, workout_name, date, duration_seconds) VALUES (?, ?, ?, ?)',
+    workoutId, workoutName, date, durationSeconds
   );
   return result.lastInsertRowId;
 }

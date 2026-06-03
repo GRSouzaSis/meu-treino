@@ -8,6 +8,14 @@ import { WorkoutLog } from '../types';
 
 const MONTHS_PT = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 
+function formatDuration(seconds: number) {
+  if (!seconds) return 'Treino concluído';
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (h > 0) return `${h}h ${m}min`;
+  return `${m}min`;
+}
+
 function formatDatePT(dateStr: string) {
   const [year, month, day] = dateStr.split('-');
   return `${day} de ${MONTHS_PT[Number(month) - 1]} de ${year}`;
@@ -108,7 +116,7 @@ export default function CalendarScreen() {
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.logName}>{item.workout_name}</Text>
-                      <Text style={styles.logSub}>Treino concluído</Text>
+                      <Text style={styles.logSub}>{formatDuration(item.duration_seconds)}</Text>
                     </View>
                     <TouchableOpacity onPress={() => handleDelete(item)} style={styles.deleteBtn}>
                       <Text style={styles.deleteBtnText}>🗑️</Text>

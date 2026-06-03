@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Vibration, Modal } from 'react-native';
 import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { getExercises, insertWorkoutLog, insertSetLog } from '../services/database';
+import { getExercises, insertWorkoutLog, insertSetLog, updateExercise } from '../services/database';
 import { Exercise, RootStackParamList } from '../types';
 
 type Route = RouteProp<RootStackParamList, 'WorkoutExecution'>;
@@ -35,9 +35,16 @@ export default function WorkoutExecutionScreen() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timerFinishedNaturally = useRef(false);
 
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
   const [editingSet, setEditingSet] = useState<EditingSet | null>(null);
   const [editReps, setEditReps] = useState(0);
   const [editWeight, setEditWeight] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => setElapsedSeconds(s => s + 1), 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     const exs = getExercises(workoutId);
@@ -113,6 +120,11 @@ export default function WorkoutExecutionScreen() {
       ...prev,
       [editingSet.key]: { ...prev[editingSet.key], reps: editReps, weight: editWeight },
     }));
+    const exerciseId = parseInt(editingSet.key.split('-')[0], 10);
+    const exercise = exercises.find(e => e.id === exerciseId);
+    if (exercise) {
+      updateExercise(exerciseId, exercise.name, exercise.sets, editReps, editWeight);
+    }
     setEditingSet(null);
   }
 
@@ -124,14 +136,19 @@ export default function WorkoutExecutionScreen() {
 
   function handleFinish() {
     const today = new Date().toISOString().split('T')[0];
-    const logId = insertWorkoutLog(workoutId, workoutName, today);
+    const logId = insertWorkoutLog(workoutId, workoutName, today, elapsedSeconds);
     exercises.forEach(ex => {
       for (let s = 1; s <= ex.sets; s++) {
         const state = setStates[`${ex.id}-${s}`];
         if (state?.done) insertSetLog(logId, ex.id, ex.name, s, state.reps, state.weight);
       }
     });
-    Alert.alert('Treino finalizado! 🎉', `Treino ${workoutName} salvo com sucesso.`, [
+    const mins = Math.floor(elapsedSeconds / 60);
+    const secs = elapsedSeconds % 60;
+    const durationLabel = mins > 0
+      ? `${mins}min${secs > 0 ? ` ${secs}s` : ''}`
+      : `${secs}s`;
+    Alert.alert('Treino finalizado! 🎉', `${workoutName} concluído em ${durationLabel}.`, [
       { text: 'OK', onPress: () => navigation.goBack() },
     ]);
   }
@@ -140,6 +157,7 @@ export default function WorkoutExecutionScreen() {
   const doneSets = Object.values(setStates).filter(s => s.done).length;
   const progress = totalSets > 0 ? doneSets / totalSets : 0;
   const allDone = doneSets === totalSets && totalSets > 0;
+  const canFinish = progress >= 0.8;
 
   return (
     <View style={styles.container}>
@@ -147,7 +165,7 @@ export default function WorkoutExecutionScreen() {
       <View style={styles.progressHeader}>
         <View style={styles.progressLabelRow}>
           <Text style={styles.progressLabel}>{doneSets}/{totalSets} séries concluídas</Text>
-          <Text style={styles.progressPct}>{Math.round(progress * 100)}%</Text>
+          <Text style={styles.progressPct}>{formatTime(elapsedSeconds)}</Text>
         </View>
         <View style={styles.progressTrack}>
           <View style={[styles.progressFill, { width: `${progress * 100}%` as any }]} />
@@ -239,18 +257,18 @@ export default function WorkoutExecutionScreen() {
       <TouchableOpacity
         style={[
           styles.finishBtn,
-          doneSets === 0 && styles.finishBtnDisabled,
+          !canFinish && styles.finishBtnDisabled,
           allDone && styles.finishBtnAll,
         ]}
-        onPress={doneSets > 0 ? handleFinish : undefined}
-        activeOpacity={doneSets > 0 ? 0.8 : 1}
+        onPress={canFinish ? handleFinish : undefined}
+        activeOpacity={canFinish ? 0.8 : 1}
       >
-        <Text style={[styles.finishBtnText, doneSets === 0 && styles.finishBtnTextDisabled]}>
-          {doneSets === 0
-            ? 'Nenhuma série concluída'
-            : allDone
+        <Text style={[styles.finishBtnText, !canFinish && styles.finishBtnTextDisabled]}>
+          {allDone
             ? '🎉 Finalizar treino'
-            : `Finalizar (${doneSets}/${totalSets} séries)`}
+            : canFinish
+            ? `Finalizar (${doneSets}/${totalSets} séries)`
+            : `${Math.round(progress * 100)}% — complete 80% para finalizar`}
         </Text>
       </TouchableOpacity>
 
@@ -404,7 +422,7 @@ const styles = StyleSheet.create({
 
   finishBtn: {
     position: 'absolute',
-    bottom: 24,
+    bottom: 48,
     left: 16,
     right: 16,
     backgroundColor: '#16A34A',

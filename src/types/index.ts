@@ -17,6 +17,7 @@ export interface WorkoutLog {
   workout_id: number;
   workout_name: string;
   date: string; // YYYY-MM-DD
+  duration_seconds: number;
 }
 
 export interface SetLog {
