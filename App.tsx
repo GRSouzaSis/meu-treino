@@ -1,5 +1,16 @@
-import HomeScreen from './src/screens/HomeScreen';
+import { useEffect } from 'react';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { setupDatabase } from './src/services/database';
+import AppNavigator from './src/navigation/AppNavigator';
 
 export default function App() {
-  return <HomeScreen />;
+  useEffect(() => {
+    setupDatabase();
+  }, []);
+
+  return (
+    <SafeAreaProvider>
+      <AppNavigator />
+    </SafeAreaProvider>
+  );
 }
