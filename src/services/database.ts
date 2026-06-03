@@ -40,10 +40,34 @@ export function setupDatabase() {
       weight_used REAL NOT NULL,
       FOREIGN KEY (workout_log_id) REFERENCES workout_logs(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS exercise_sets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      exercise_id INTEGER NOT NULL,
+      set_number INTEGER NOT NULL,
+      reps INTEGER NOT NULL,
+      weight REAL NOT NULL,
+      UNIQUE(exercise_id, set_number),
+      FOREIGN KEY (exercise_id) REFERENCES exercises(id) ON DELETE CASCADE
+    );
   `);
   // migration for existing databases without duration_seconds
   try {
     db.execSync(`ALTER TABLE workout_logs ADD COLUMN duration_seconds INTEGER NOT NULL DEFAULT 0`);
+  } catch {}
+  // migration for existing databases without exercise_sets
+  try {
+    db.execSync(`
+      CREATE TABLE IF NOT EXISTS exercise_sets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        exercise_id INTEGER NOT NULL,
+        set_number INTEGER NOT NULL,
+        reps INTEGER NOT NULL,
+        weight REAL NOT NULL,
+        UNIQUE(exercise_id, set_number),
+        FOREIGN KEY (exercise_id) REFERENCES exercises(id) ON DELETE CASCADE
+      )
+    `);
   } catch {}
 }
 
@@ -136,6 +160,21 @@ export function updateExercise(id: number, name: string, sets: number, reps: num
 
 export function deleteExercise(id: number) {
   db.runSync('DELETE FROM exercises WHERE id = ?', id);
+}
+
+// Per-set weights/reps
+export function getExerciseSets(exerciseId: number): { set_number: number; reps: number; weight: number }[] {
+  return db.getAllSync(
+    'SELECT set_number, reps, weight FROM exercise_sets WHERE exercise_id = ? ORDER BY set_number',
+    exerciseId
+  );
+}
+
+export function upsertExerciseSet(exerciseId: number, setNumber: number, reps: number, weight: number) {
+  db.runSync(
+    'INSERT OR REPLACE INTO exercise_sets (exercise_id, set_number, reps, weight) VALUES (?, ?, ?, ?)',
+    exerciseId, setNumber, reps, weight
+  );
 }
 
 // Workout Logs

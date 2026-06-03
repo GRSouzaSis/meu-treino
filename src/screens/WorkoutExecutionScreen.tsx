@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Vibration, Modal } from 'react-native';
 import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { getExercises, insertWorkoutLog, insertSetLog, updateExercise } from '../services/database';
+import { getExercises, insertWorkoutLog, insertSetLog, getExerciseSets, upsertExerciseSet } from '../services/database';
 import { Exercise, RootStackParamList } from '../types';
 
 type Route = RouteProp<RootStackParamList, 'WorkoutExecution'>;
@@ -20,13 +20,26 @@ interface EditingSet {
   setNumber: number;
 }
 
+interface WorkoutSession {
+  workoutId: number;
+  startedAt: number;
+  setStates: Record<string, SetState>;
+}
+
+let activeSession: WorkoutSession | null = null;
+
 export default function WorkoutExecutionScreen() {
   const route = useRoute<Route>();
   const navigation = useNavigation<Nav>();
   const { workoutId, workoutName } = route.params;
 
+  const isRestoredSession = activeSession?.workoutId === workoutId;
+
   const [exercises, setExercises] = useState<Exercise[]>([]);
-  const [setStates, setSetStates] = useState<Record<string, SetState>>({});
+  const [setStates, setSetStates] = useState<Record<string, SetState>>(
+    isRestoredSession ? activeSession!.setStates : {}
+  );
+  const [started, setStarted] = useState(isRestoredSession);
 
   const [defaultTimer, setDefaultTimer] = useState(60);
   const [timerActive, setTimerActive] = useState(false);
@@ -35,24 +48,38 @@ export default function WorkoutExecutionScreen() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timerFinishedNaturally = useRef(false);
 
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [elapsedSeconds, setElapsedSeconds] = useState(() =>
+    isRestoredSession
+      ? Math.floor((Date.now() - activeSession!.startedAt) / 1000)
+      : 0
+  );
 
   const [editingSet, setEditingSet] = useState<EditingSet | null>(null);
   const [editReps, setEditReps] = useState(0);
   const [editWeight, setEditWeight] = useState(0);
 
   useEffect(() => {
+    if (!started) return;
     const interval = setInterval(() => setElapsedSeconds(s => s + 1), 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [started]);
 
   useEffect(() => {
     const exs = getExercises(workoutId);
     setExercises(exs);
+    if (isRestoredSession) return;
     const initial: Record<string, SetState> = {};
     exs.forEach(ex => {
+      const perSet = getExerciseSets(ex.id);
+      const setMap: Record<number, { reps: number; weight: number }> = {};
+      perSet.forEach(s => { setMap[s.set_number] = { reps: s.reps, weight: s.weight }; });
       for (let s = 1; s <= ex.sets; s++) {
-        initial[`${ex.id}-${s}`] = { done: false, reps: ex.reps, weight: ex.weight };
+        const override = setMap[s];
+        initial[`${ex.id}-${s}`] = {
+          done: false,
+          reps: override ? override.reps : ex.reps,
+          weight: override ? override.weight : ex.weight,
+        };
       }
     });
     setSetStates(initial);
@@ -81,6 +108,12 @@ export default function WorkoutExecutionScreen() {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [timerActive]);
 
+  function handleStart() {
+    activeSession = { workoutId, startedAt: Date.now(), setStates };
+    setStarted(true);
+    Vibration.vibrate(60);
+  }
+
   function startTimer(seconds: number) {
     if (timerRef.current) clearInterval(timerRef.current);
     timerFinishedNaturally.current = false;
@@ -94,11 +127,19 @@ export default function WorkoutExecutionScreen() {
     setTimerActive(false);
   }
 
+  function updateSetStates(updater: (prev: Record<string, SetState>) => Record<string, SetState>) {
+    setSetStates(prev => {
+      const next = updater(prev);
+      if (activeSession?.workoutId === workoutId) activeSession.setStates = next;
+      return next;
+    });
+  }
+
   function toggleSet(exerciseId: number, setNumber: number) {
     const key = `${exerciseId}-${setNumber}`;
     const current = setStates[key];
     const nowDone = !current.done;
-    setSetStates(prev => ({ ...prev, [key]: { ...current, done: nowDone } }));
+    updateSetStates(prev => ({ ...prev, [key]: { ...current, done: nowDone } }));
     if (nowDone) {
       Vibration.vibrate(40);
       startTimer(defaultTimer);
@@ -116,15 +157,12 @@ export default function WorkoutExecutionScreen() {
 
   function confirmEditSet() {
     if (!editingSet) return;
-    setSetStates(prev => ({
+    updateSetStates(prev => ({
       ...prev,
       [editingSet.key]: { ...prev[editingSet.key], reps: editReps, weight: editWeight },
     }));
-    const exerciseId = parseInt(editingSet.key.split('-')[0], 10);
-    const exercise = exercises.find(e => e.id === exerciseId);
-    if (exercise) {
-      updateExercise(exerciseId, exercise.name, exercise.sets, editReps, editWeight);
-    }
+    const [exIdStr, setNumStr] = editingSet.key.split('-');
+    upsertExerciseSet(parseInt(exIdStr, 10), parseInt(setNumStr, 10), editReps, editWeight);
     setEditingSet(null);
   }
 
@@ -148,6 +186,7 @@ export default function WorkoutExecutionScreen() {
     const durationLabel = mins > 0
       ? `${mins}min${secs > 0 ? ` ${secs}s` : ''}`
       : `${secs}s`;
+    activeSession = null;
     Alert.alert('Treino finalizado! 🎉', `${workoutName} concluído em ${durationLabel}.`, [
       { text: 'OK', onPress: () => navigation.goBack() },
     ]);
@@ -164,51 +203,59 @@ export default function WorkoutExecutionScreen() {
       {/* Barra de progresso */}
       <View style={styles.progressHeader}>
         <View style={styles.progressLabelRow}>
-          <Text style={styles.progressLabel}>{doneSets}/{totalSets} séries concluídas</Text>
-          <Text style={styles.progressPct}>{formatTime(elapsedSeconds)}</Text>
+          <Text style={styles.progressLabel}>
+            {started ? `${doneSets}/${totalSets} séries concluídas` : workoutName}
+          </Text>
+          <Text style={styles.progressPct}>
+            {started ? formatTime(elapsedSeconds) : `${totalSets} séries`}
+          </Text>
         </View>
         <View style={styles.progressTrack}>
           <View style={[styles.progressFill, { width: `${progress * 100}%` as any }]} />
         </View>
       </View>
 
-      {/* Timer pill sempre visível */}
-      <View style={[styles.timerCard, timerActive && styles.timerCardActive]}>
-        <View style={styles.timerLeft}>
-          <Text style={[styles.timerLabel, timerActive && styles.timerLabelActive]}>
-            {timerActive ? 'Descanso' : 'Padrão'}
-          </Text>
-          <Text style={[styles.timerValue, !timerActive && styles.timerValueInactive]}>
-            {timerActive ? formatTime(timerSeconds) : formatTime(defaultTimer)}
-          </Text>
-        </View>
-        <View style={styles.timerPresets}>
-          {[30, 60, 90, 120].map(s => {
-            const isActive = timerActive ? timerTotal === s : defaultTimer === s;
-            return (
-              <TouchableOpacity
-                key={s}
-                style={[styles.presetBtn, isActive && styles.presetBtnActive]}
-                onPress={() => timerActive ? startTimer(s) : setDefaultTimer(s)}
-              >
-                <Text style={[styles.presetText, isActive && styles.presetTextActive]}>
-                  {s}s
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-          {timerActive && (
-            <TouchableOpacity style={styles.cancelBtn} onPress={cancelTimer}>
-              <Text style={styles.cancelBtnText}>✕</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
+      {/* Timer pill — só visível durante o treino */}
+      {started && (
+        <>
+          <View style={[styles.timerCard, timerActive && styles.timerCardActive]}>
+            <View style={styles.timerLeft}>
+              <Text style={[styles.timerLabel, timerActive && styles.timerLabelActive]}>
+                {timerActive ? 'Descanso' : 'Padrão'}
+              </Text>
+              <Text style={[styles.timerValue, !timerActive && styles.timerValueInactive]}>
+                {timerActive ? formatTime(timerSeconds) : formatTime(defaultTimer)}
+              </Text>
+            </View>
+            <View style={styles.timerPresets}>
+              {[30, 60, 90, 120].map(s => {
+                const isActive = timerActive ? timerTotal === s : defaultTimer === s;
+                return (
+                  <TouchableOpacity
+                    key={s}
+                    style={[styles.presetBtn, isActive && styles.presetBtnActive]}
+                    onPress={() => timerActive ? startTimer(s) : setDefaultTimer(s)}
+                  >
+                    <Text style={[styles.presetText, isActive && styles.presetTextActive]}>
+                      {s}s
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+              {timerActive && (
+                <TouchableOpacity style={styles.cancelBtn} onPress={cancelTimer}>
+                  <Text style={styles.cancelBtnText}>✕</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
 
-      {timerActive && (
-        <View style={styles.timerTrack}>
-          <View style={[styles.timerFill, { width: `${(timerSeconds / timerTotal) * 100}%` as any }]} />
-        </View>
+          {timerActive && (
+            <View style={styles.timerTrack}>
+              <View style={[styles.timerFill, { width: `${(timerSeconds / timerTotal) * 100}%` as any }]} />
+            </View>
+          )}
+        </>
       )}
 
       <ScrollView contentContainerStyle={styles.list}>
@@ -221,7 +268,7 @@ export default function WorkoutExecutionScreen() {
               <View style={styles.exerciseHeader}>
                 <Text style={styles.exerciseName}>{exercise.name}</Text>
                 <Text style={[styles.exerciseCount, exDone === exercise.sets && styles.exerciseCountDone]}>
-                  {exDone}/{exercise.sets} séries
+                  {started ? `${exDone}/${exercise.sets} séries` : `${exercise.sets} séries`}
                 </Text>
               </View>
               <View style={styles.setsRow}>
@@ -232,12 +279,13 @@ export default function WorkoutExecutionScreen() {
                   return (
                     <TouchableOpacity
                       key={setNum}
-                      style={[styles.setBtn, done && styles.setBtnDone]}
-                      onPress={() => toggleSet(exercise.id, setNum)}
-                      onLongPress={() => openEditSet(exercise, setNum)}
+                      style={[styles.setBtn, done && styles.setBtnDone, !started && styles.setBtnLocked]}
+                      onPress={() => started && toggleSet(exercise.id, setNum)}
+                      onLongPress={() => started && openEditSet(exercise, setNum)}
                       delayLongPress={400}
+                      activeOpacity={started ? 0.7 : 1}
                     >
-                      <Text style={[styles.setBtnLabel, done && styles.setBtnLabelDone]}>
+                      <Text style={[styles.setBtnLabel, done && styles.setBtnLabelDone, !started && styles.setBtnLabelLocked]}>
                         {done ? '✓' : setNum}
                       </Text>
                       <Text style={[styles.setBtnDetail, done && styles.setBtnDetailDone]}>
@@ -247,30 +295,36 @@ export default function WorkoutExecutionScreen() {
                   );
                 })}
               </View>
-              <Text style={styles.longPressHint}>Segure uma série para editar</Text>
+              {started && <Text style={styles.longPressHint}>Segure uma série para editar</Text>}
             </View>
           );
         })}
       </ScrollView>
 
-      {/* Botão finalizar dinâmico */}
-      <TouchableOpacity
-        style={[
-          styles.finishBtn,
-          !canFinish && styles.finishBtnDisabled,
-          allDone && styles.finishBtnAll,
-        ]}
-        onPress={canFinish ? handleFinish : undefined}
-        activeOpacity={canFinish ? 0.8 : 1}
-      >
-        <Text style={[styles.finishBtnText, !canFinish && styles.finishBtnTextDisabled]}>
-          {allDone
-            ? '🎉 Finalizar treino'
-            : canFinish
-            ? `Finalizar (${doneSets}/${totalSets} séries)`
-            : `${Math.round(progress * 100)}% — complete 80% para finalizar`}
-        </Text>
-      </TouchableOpacity>
+      {/* Botão principal: iniciar ou finalizar */}
+      {!started ? (
+        <TouchableOpacity style={styles.startBtn} onPress={handleStart}>
+          <Text style={styles.startBtnText}>▶  Iniciar treino</Text>
+        </TouchableOpacity>
+      ) : (
+        <TouchableOpacity
+          style={[
+            styles.finishBtn,
+            !canFinish && styles.finishBtnDisabled,
+            allDone && styles.finishBtnAll,
+          ]}
+          onPress={canFinish ? handleFinish : undefined}
+          activeOpacity={canFinish ? 0.8 : 1}
+        >
+          <Text style={[styles.finishBtnText, !canFinish && styles.finishBtnTextDisabled]}>
+            {allDone
+              ? '🎉 Finalizar treino'
+              : canFinish
+              ? `Finalizar (${doneSets}/${totalSets} séries)`
+              : `${Math.round(progress * 100)}% — complete 80% para finalizar`}
+          </Text>
+        </TouchableOpacity>
+      )}
 
       {/* Modal de edição de série */}
       <Modal visible={editingSet !== null} transparent animationType="fade">
@@ -414,11 +468,29 @@ const styles = StyleSheet.create({
     minWidth: 64,
   },
   setBtnDone: { borderColor: '#2563EB', backgroundColor: '#2563EB' },
+  setBtnLocked: { opacity: 0.5 },
   setBtnLabel: { fontSize: 15, fontWeight: '700', color: '#6B7280' },
   setBtnLabelDone: { color: '#fff' },
+  setBtnLabelLocked: { color: '#9CA3AF' },
   setBtnDetail: { fontSize: 11, color: '#9CA3AF', marginTop: 2 },
   setBtnDetailDone: { color: '#BFDBFE' },
   longPressHint: { fontSize: 11, color: '#D1D5DB', marginTop: 10, textAlign: 'right' },
+
+  startBtn: {
+    position: 'absolute',
+    bottom: 48,
+    left: 16,
+    right: 16,
+    backgroundColor: '#2563EB',
+    borderRadius: 12,
+    padding: 18,
+    alignItems: 'center',
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+  },
+  startBtnText: { color: '#fff', fontWeight: '800', fontSize: 17, letterSpacing: 0.5 },
 
   finishBtn: {
     position: 'absolute',
