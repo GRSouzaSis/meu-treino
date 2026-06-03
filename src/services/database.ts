@@ -4,6 +4,7 @@ import { Exercise, SetLog, Workout, WorkoutLog } from '../types';
 const db = SQLite.openDatabaseSync('meu-treino.db');
 
 export function setupDatabase() {
+  db.execSync(`PRAGMA foreign_keys = ON;`);
   db.execSync(`
     CREATE TABLE IF NOT EXISTS workouts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -86,6 +87,10 @@ export function deleteExercise(id: number) {
 // Workout Logs
 export function getWorkoutLogs(): WorkoutLog[] {
   return db.getAllSync('SELECT * FROM workout_logs ORDER BY date DESC');
+}
+
+export function deleteWorkoutLog(id: number) {
+  db.runSync('DELETE FROM workout_logs WHERE id = ?', id);
 }
 
 export function insertWorkoutLog(workoutId: number, workoutName: string, date: string): number {
