@@ -54,12 +54,25 @@ function Tabs() {
 export default function AppNavigator() {
   return (
     <NavigationContainer>
-      <Stack.Navigator>
-        <Stack.Screen name="Tabs" component={Tabs} options={{ headerShown: false }} />
+      <Stack.Navigator
+        screenOptions={{
+          headerStyle: { backgroundColor: '#2563EB' },
+          headerTintColor: '#fff',
+          headerTitleStyle: { fontWeight: '700' },
+          statusBarColor: '#2563EB',
+          statusBarStyle: 'light',
+          statusBarTranslucent: false,
+        }}
+      >
+        <Stack.Screen
+          name="Tabs"
+          component={Tabs}
+          options={{ headerShown: false, statusBarStyle: 'dark', statusBarColor: '#ffffff' }}
+        />
         <Stack.Screen
           name="WorkoutExecution"
           component={WorkoutExecutionScreen}
-          options={({ route }) => ({ title: `Treino ${route.params.workoutName}` })}
+          options={({ route }) => ({ title: route.params.workoutName })}
         />
         <Stack.Screen
           name="WorkoutForm"

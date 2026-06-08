@@ -45,16 +45,22 @@ export default function CalendarScreen() {
     ]);
   }
 
-  const markedDates = logs.reduce<Record<string, { marked: boolean; dotColor: string; selected?: boolean; selectedColor?: string }>>((acc, log) => {
-    acc[log.date] = { marked: true, dotColor: '#2563EB' };
+  const markedDates = logs.reduce<Record<string, { customStyles: { container: object; text: object } }>>((acc, log) => {
+    acc[log.date] = {
+      customStyles: {
+        container: { backgroundColor: 'rgba(37, 99, 235, 0.12)', borderRadius: 16 },
+        text: { color: '#2563EB', fontWeight: '700' },
+      },
+    };
     return acc;
   }, {});
 
   if (selectedDate) {
     markedDates[selectedDate] = {
-      ...markedDates[selectedDate],
-      selected: true,
-      selectedColor: '#2563EB',
+      customStyles: {
+        container: { backgroundColor: '#2563EB', borderRadius: 16 },
+        text: { color: '#ffffff', fontWeight: '700' },
+      },
     };
   }
 
@@ -69,6 +75,7 @@ export default function CalendarScreen() {
 
       <Calendar
         markedDates={markedDates}
+        markingType="custom"
         onDayPress={(day: DateData) => setSelectedDate(day.dateString)}
         style={styles.calendar}
         theme={{

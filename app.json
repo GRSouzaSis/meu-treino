@@ -2,7 +2,7 @@
   "expo": {
     "name": "meu-treino",
     "slug": "meu-treino",
-    "version": "1.0.0",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -11,6 +11,7 @@
     },
     "android": {
       "package": "com.givaldo.meutreino",
+      "permissions": ["android.permission.SCHEDULE_EXACT_ALARM"],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -26,6 +27,8 @@
       [
         "expo-notifications",
         {
+          "icon": "./assets/android-icon-monochrome.png",
+          "color": "#2563EB",
           "sounds": []
         }
       ]

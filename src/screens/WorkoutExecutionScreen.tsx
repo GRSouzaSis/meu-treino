@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Vibration, Modal, AppState, AppStateStatus } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Vibration, Modal, AppState, AppStateStatus, Platform } from 'react-native';
 import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as Notifications from 'expo-notifications';
@@ -51,7 +51,7 @@ export default function WorkoutExecutionScreen() {
   );
   const [started, setStarted] = useState(isRestoredSession);
 
-  const [defaultTimer, setDefaultTimer] = useState(60);
+  const [defaultTimer, setDefaultTimer] = useState<number | null>(null);
   const [timerActive, setTimerActive] = useState(false);
   const [timerSeconds, setTimerSeconds] = useState(0);
   const [timerTotal, setTimerTotal] = useState(60);
@@ -74,7 +74,20 @@ export default function WorkoutExecutionScreen() {
   const [editWeight, setEditWeight] = useState(0);
 
   useEffect(() => {
-    Notifications.requestPermissionsAsync();
+    async function setup() {
+      await Notifications.requestPermissionsAsync();
+      if (Platform.OS === 'android') {
+        await Notifications.setNotificationChannelAsync('timer', {
+          name: 'Timer de Descanso',
+          importance: Notifications.AndroidImportance.MAX,
+          vibrationPattern: [0, 300, 150, 300],
+          lightColor: '#2563EB',
+          enableVibrate: true,
+          showBadge: false,
+        });
+      }
+    }
+    setup();
   }, []);
 
   useEffect(() => {
@@ -170,6 +183,7 @@ export default function WorkoutExecutionScreen() {
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.DATE,
         date: new Date(endTime),
+        channelId: 'timer',
       },
     }).then(id => { notificationIdRef.current = id; });
     timerRef.current = setInterval(() => {
@@ -214,7 +228,7 @@ export default function WorkoutExecutionScreen() {
     updateSetStates(prev => ({ ...prev, [key]: { ...current, done: nowDone } }));
     if (nowDone) {
       Vibration.vibrate(40);
-      startTimer(defaultTimer);
+      if (defaultTimer !== null) startTimer(defaultTimer);
     }
   }
 
@@ -296,17 +310,17 @@ export default function WorkoutExecutionScreen() {
                 {timerActive ? 'Descanso' : 'Padrão'}
               </Text>
               <Text style={[styles.timerValue, !timerActive && styles.timerValueInactive]}>
-                {timerActive ? formatTime(timerSeconds) : formatTime(defaultTimer)}
+                {timerActive ? formatTime(timerSeconds) : defaultTimer !== null ? formatTime(defaultTimer) : '- -'}
               </Text>
             </View>
             <View style={styles.timerPresets}>
-              {[30, 60, 90, 120].map(s => {
+              {[10, 30, 60, 90, 120].map(s => {
                 const isActive = timerActive ? timerTotal === s : defaultTimer === s;
                 return (
                   <TouchableOpacity
                     key={s}
                     style={[styles.presetBtn, isActive && styles.presetBtnActive]}
-                    onPress={() => timerActive ? startTimer(s) : setDefaultTimer(s)}
+                    onPress={() => { setDefaultTimer(s); if (timerActive) startTimer(s); }}
                   >
                     <Text style={[styles.presetText, isActive && styles.presetTextActive]}>
                       {s}s
@@ -493,10 +507,10 @@ const styles = StyleSheet.create({
   timerLabelActive: { color: '#2563EB' },
   timerValue: { fontSize: 26, fontWeight: '800', color: '#1D4ED8', letterSpacing: 1 },
   timerValueInactive: { fontSize: 22, color: '#9CA3AF' },
-  timerPresets: { flex: 1, flexDirection: 'row', justifyContent: 'flex-end', gap: 6 },
+  timerPresets: { flex: 1, flexDirection: 'row', justifyContent: 'flex-end', gap: 4 },
   presetBtn: {
     backgroundColor: '#F3F4F6',
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
     paddingVertical: 6,
     borderRadius: 16,
   },
