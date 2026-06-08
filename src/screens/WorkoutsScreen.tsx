@@ -5,18 +5,43 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { getWorkouts, deleteWorkout } from '../services/database';
 import { RootStackParamList, Workout } from '../types';
+import { getActiveSession } from './WorkoutExecutionScreen';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 export default function WorkoutsScreen() {
   const navigation = useNavigation<Nav>();
   const [workouts, setWorkouts] = useState<Workout[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
 
   useFocusEffect(
     useCallback(() => {
       setWorkouts(getWorkouts());
+      setActiveSessionId(getActiveSession()?.workoutId ?? null);
     }, [])
   );
+
+  function handlePress(item: Workout) {
+    const session = getActiveSession();
+    if (session && session.workoutId !== item.id) {
+      Alert.alert(
+        'Treino em andamento',
+        `"${session.workoutName}" está em andamento. Finalize-o antes de iniciar outro.`,
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          {
+            text: 'Retomar treino',
+            onPress: () => navigation.navigate('WorkoutExecution', {
+              workoutId: session.workoutId,
+              workoutName: session.workoutName,
+            }),
+          },
+        ]
+      );
+      return;
+    }
+    navigation.navigate('WorkoutExecution', { workoutId: item.id, workoutName: item.name });
+  }
 
   function handleDelete(workout: Workout) {
     Alert.alert('Excluir treino', `Excluir "${workout.name}" e todos os exercícios?`, [
@@ -45,13 +70,22 @@ export default function WorkoutsScreen() {
           </View>
         }
         renderItem={({ item }) => (
-          <View style={styles.card}>
+          <View style={[styles.card, item.id === activeSessionId && styles.cardActive]}>
             <TouchableOpacity
               style={styles.cardMain}
-              onPress={() => navigation.navigate('WorkoutExecution', { workoutId: item.id, workoutName: item.name })}
+              onPress={() => handlePress(item)}
             >
-              <Text style={styles.cardName}>Treino {item.name}</Text>
-              <Text style={styles.cardHint}>Toque para executar</Text>
+              <View style={styles.cardNameRow}>
+                <Text style={styles.cardName}>Treino {item.name}</Text>
+                {item.id === activeSessionId && (
+                  <View style={styles.activeBadge}>
+                    <Text style={styles.activeBadgeText}>Em andamento</Text>
+                  </View>
+                )}
+              </View>
+              <Text style={styles.cardHint}>
+                {item.id === activeSessionId ? 'Toque para continuar' : 'Toque para executar'}
+              </Text>
             </TouchableOpacity>
             <View style={styles.cardActions}>
               <TouchableOpacity
@@ -95,9 +129,13 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
+  cardActive: { borderWidth: 2, borderColor: '#16A34A' },
   cardMain: { flex: 1, padding: 16 },
+  cardNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
   cardName: { fontSize: 18, fontWeight: '700', color: '#111827' },
   cardHint: { fontSize: 12, color: '#9CA3AF', marginTop: 2 },
+  activeBadge: { backgroundColor: '#DCFCE7', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
+  activeBadgeText: { fontSize: 11, fontWeight: '700', color: '#16A34A' },
   cardActions: { flexDirection: 'row', paddingRight: 8 },
   editBtn: { padding: 10 },
   editBtnText: { fontSize: 18 },

@@ -170,5 +170,5 @@ const styles = StyleSheet.create({
   emptyIcon: { fontSize: 44, marginBottom: 12 },
   emptyText: { fontSize: 16, fontWeight: '600', color: '#374151' },
   emptyHint: { fontSize: 13, color: '#9CA3AF', marginTop: 4 },
-  versionText: { textAlign: 'center', fontSize: 11, color: '#D1D5DB', paddingVertical: 8 },
+  versionText: { textAlign: 'center', fontSize: 12, color: '#000', paddingVertical: 8 },
 });

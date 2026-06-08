@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, FlatList } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, FlatList, Keyboard } from 'react-native';
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useCallback } from 'react';
@@ -29,6 +29,7 @@ export default function WorkoutFormScreen() {
       Alert.alert('Informe o nome do treino');
       return;
     }
+    Keyboard.dismiss();
     if (workoutId) {
       updateWorkout(workoutId, name.trim());
     } else {

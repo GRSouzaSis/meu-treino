@@ -32,11 +32,13 @@ interface EditingSet {
 
 interface WorkoutSession {
   workoutId: number;
+  workoutName: string;
   startedAt: number;
   setStates: Record<string, SetState>;
 }
 
 let activeSession: WorkoutSession | null = null;
+export function getActiveSession() { return activeSession; }
 
 export default function WorkoutExecutionScreen() {
   const route = useRoute<Route>();
@@ -157,7 +159,7 @@ export default function WorkoutExecutionScreen() {
   function handleStart() {
     const now = Date.now();
     workoutStartTimeRef.current = now;
-    activeSession = { workoutId, startedAt: now, setStates };
+    activeSession = { workoutId, workoutName, startedAt: now, setStates };
     setStarted(true);
     Vibration.vibrate(60);
   }
