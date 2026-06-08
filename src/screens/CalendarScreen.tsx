@@ -32,7 +32,7 @@ export default function CalendarScreen() {
   );
 
   function handleDelete(log: WorkoutLog) {
-    Alert.alert('Excluir registro', `Excluir o treino ${log.workout_name} do dia ${log.date}?`, [
+    Alert.alert('Excluir registro', `Excluir o treino ${log.workout_name} do dia ${formatDatePT(log.date)}?`, [
       { text: 'Cancelar', style: 'cancel' },
       {
         text: 'Excluir',

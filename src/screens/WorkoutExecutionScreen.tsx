@@ -1,9 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Vibration, Modal } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Vibration, Modal, AppState, AppStateStatus } from 'react-native';
 import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import * as Notifications from 'expo-notifications';
 import { getExercises, insertWorkoutLog, insertSetLog, getExerciseSets, upsertExerciseSet } from '../services/database';
 import { Exercise, RootStackParamList } from '../types';
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
 
 type Route = RouteProp<RootStackParamList, 'WorkoutExecution'>;
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -47,6 +57,11 @@ export default function WorkoutExecutionScreen() {
   const [timerTotal, setTimerTotal] = useState(60);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timerFinishedNaturally = useRef(false);
+  const timerEndTimeRef = useRef(0);
+  const notificationIdRef = useRef<string | null>(null);
+
+  const workoutStartTimeRef = useRef(isRestoredSession ? activeSession!.startedAt : 0);
+  const appStateRef = useRef(AppState.currentState);
 
   const [elapsedSeconds, setElapsedSeconds] = useState(() =>
     isRestoredSession
@@ -59,10 +74,40 @@ export default function WorkoutExecutionScreen() {
   const [editWeight, setEditWeight] = useState(0);
 
   useEffect(() => {
+    Notifications.requestPermissionsAsync();
+  }, []);
+
+  useEffect(() => {
     if (!started) return;
-    const interval = setInterval(() => setElapsedSeconds(s => s + 1), 1000);
+    const interval = setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - workoutStartTimeRef.current) / 1000));
+    }, 1000);
     return () => clearInterval(interval);
   }, [started]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
+      if (appStateRef.current.match(/inactive|background/) && next === 'active') {
+        if (timerEndTimeRef.current > 0) {
+          const remaining = Math.ceil((timerEndTimeRef.current - Date.now()) / 1000);
+          if (remaining <= 0) {
+            if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+            timerFinishedNaturally.current = true;
+            notificationIdRef.current = null;
+            setTimerActive(false);
+            setTimerSeconds(0);
+          } else {
+            setTimerSeconds(remaining);
+          }
+        }
+        if (workoutStartTimeRef.current > 0) {
+          setElapsedSeconds(Math.floor((Date.now() - workoutStartTimeRef.current) / 1000));
+        }
+      }
+      appStateRef.current = next;
+    });
+    return () => sub.remove();
+  }, []);
 
   useEffect(() => {
     const exs = getExercises(workoutId);
@@ -86,43 +131,70 @@ export default function WorkoutExecutionScreen() {
   }, [workoutId]);
 
   useEffect(() => {
-    if (timerActive) {
-      timerRef.current = setInterval(() => {
-        setTimerSeconds(prev => {
-          if (prev <= 1) {
-            clearInterval(timerRef.current!);
-            timerFinishedNaturally.current = true;
-            setTimerActive(false);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    } else {
-      if (timerRef.current) clearInterval(timerRef.current);
-      if (timerFinishedNaturally.current) {
-        timerFinishedNaturally.current = false;
-        Vibration.vibrate([0, 300, 150, 300, 150, 300]);
-      }
+    if (!timerActive && timerFinishedNaturally.current) {
+      timerFinishedNaturally.current = false;
+      Vibration.vibrate([0, 300, 150, 300, 150, 300]);
     }
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [timerActive]);
 
+  useEffect(() => {
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, []);
+
   function handleStart() {
-    activeSession = { workoutId, startedAt: Date.now(), setStates };
+    const now = Date.now();
+    workoutStartTimeRef.current = now;
+    activeSession = { workoutId, startedAt: now, setStates };
     setStarted(true);
     Vibration.vibrate(60);
   }
 
   function startTimer(seconds: number) {
+    if (notificationIdRef.current) {
+      Notifications.cancelScheduledNotificationAsync(notificationIdRef.current);
+      notificationIdRef.current = null;
+    }
     if (timerRef.current) clearInterval(timerRef.current);
     timerFinishedNaturally.current = false;
+    const endTime = Date.now() + seconds * 1000;
+    timerEndTimeRef.current = endTime;
     setTimerTotal(seconds);
     setTimerSeconds(seconds);
     setTimerActive(true);
+    Notifications.scheduleNotificationAsync({
+      content: {
+        title: 'Descanso concluído! 💪',
+        body: 'Hora da próxima série.',
+        sound: true,
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: new Date(endTime),
+      },
+    }).then(id => { notificationIdRef.current = id; });
+    timerRef.current = setInterval(() => {
+      const remaining = Math.ceil((timerEndTimeRef.current - Date.now()) / 1000);
+      if (remaining <= 0) {
+        clearInterval(timerRef.current!);
+        timerRef.current = null;
+        timerFinishedNaturally.current = true;
+        notificationIdRef.current = null;
+        setTimerActive(false);
+        setTimerSeconds(0);
+      } else {
+        setTimerSeconds(remaining);
+      }
+    }, 500);
   }
 
   function cancelTimer() {
+    if (notificationIdRef.current) {
+      Notifications.cancelScheduledNotificationAsync(notificationIdRef.current);
+      notificationIdRef.current = null;
+    }
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = null;
+    timerEndTimeRef.current = 0;
     timerFinishedNaturally.current = false;
     setTimerActive(false);
   }
